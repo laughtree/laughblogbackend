@@ -14,3 +14,7 @@ CREATE TABLE Tags (
     Tag varchar(20) PRIMARY KEY,
     TagName varchar(20)
     );
+CREATE TABLE PostSum (
+    id varchar(5),
+    Summary varchar(150)
+);
