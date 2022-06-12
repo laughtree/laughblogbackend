@@ -4,6 +4,7 @@ const cors = require("cors")
 const mysql = require("mysql")
 const { RANDOM } = require("mysql/lib/PoolSelector")
 const { YEAR } = require("mysql/lib/protocol/constants/types")
+const { response } = require("express")
 
 const sql = mysql.createConnection({host : "localhost",user : process.env.SQL_USER,password : process.env.SQL_PASSWORD,database : 'blog'})
 const app = express()
@@ -29,14 +30,16 @@ sql.connect((err)=>{if(err) throw err; console.log("database connected")})
 //4 -> 其他
 
 
-app.get("/post",(req,res)=>{
+app.post("/post",(req,res)=>{
     let ReadPostObject = {} 
 
-    sql.query(`SELECT * FROM posts WHERE id = "${req.query.postid}";`,(err,result)=>{
+    sql.query(`SELECT * FROM posts WHERE id = "${req.body.id}";`,(err,result)=>{
         if(err){
             console.log("failed to get post")
             return
         } 
+        console.log(req.query.postid)
+        console.log(result)
         ReadPostObject.postTitle = result[0]['Title']
         ReadPostObject.postID = result[0]['id']
         ReadPostObject.postDate = result[0]['PostDate']
@@ -71,7 +74,7 @@ app.get("/post",(req,res)=>{
             return
         } 
         TagList = result
-        sql.query(`SELECT * FROM posttag WHERE id = "${req.query.postid}";`,(err,result)=>{
+        sql.query(`SELECT * FROM posttag WHERE id = "${req.body.id}";`,(err,result)=>{
             if(err){
                 console.log("failed to get post tag")
                 return
@@ -158,7 +161,7 @@ app.get("/post",(req,res)=>{
 // }) //取得文章列表處預覽資訊
 
 app.get("/post/list",(req,res)=>{
-    sql.query(`SELECT posts.*,posttag.tag,tags.tagname FROM posts,posttag,tags WHERE (posts.id = posttag.id) AND (posttag.tag = tags.tag) AND (posts.PostType = "${req.query.type}");`,(err,result)=>{
+    sql.query(`SELECT * FROM posts WHERE posts.PostType = "${req.query.type}";`,(err,result)=>{
         if(err) {
             console.log("failed to get list content")
             return
@@ -178,7 +181,7 @@ app.get("/",(req,res)=>{
     //     let id = result
         
     // })
-    sql.query(`SELECT posts.*,postsum.summary FROM posts,postsum WHERE (posts.id = postsum.id) LIMIT 5;`,(err,result)=>{
+    sql.query(`SELECT * FROM posts ORDER BY RAND() LIMIT 3;`,(err,result)=>{
         if(err) {
             console.log("failed to get post preview")
             return
@@ -189,23 +192,53 @@ app.get("/",(req,res)=>{
     
 }) //首頁那些
 
-app.get('/write',(req,res)=>{
+app.post('/writepost',(req,res)=>{
     let date = new Date()
     sql.query(`SELECT MAX(id) FROM posts;`,(err,result)=>{
         if(err){
             console.log("failed to get id")
             return
         }
-        console.log(result[0]['MAX(id)'])
-        console.log(`INSERT INTO posts VALUE ("${String(Number(result[0]['MAX(id)']) + 1).padStart(5,'0')}","${req.Title}","${String(date.getFullYear()) + "/" + String(date.getMonth()) + "/" + String(date.getDate())}","${req.type}","${req.text}")`)
-        sql.query(`INSERT INTO posts VALUE ("${String(Number(result[0]['MAX(id)']) + 1).padStart(5,'0')}","${req.Title}","${String(date.getFullYear()) + "/" + String(date.getMonth()).padStart(2,'0') + "/" + String(date.getDate()).padStart(2,'0')}","${req.type}","${req.text}")`,(err,result)=>{
+        // console.log(result[0]['MAX(id)']) //測試用
+        // console.log(`INSERT INTO posts VALUE ("${String(Number(result[0]['MAX(id)']) + 1).padStart(5,'0')}","${req.Title}","${String(date.getFullYear()) + "/" + String(date.getMonth()) + "/" + String(date.getDate())}","${req.type}","${req.text}")`) //測試用
+        sql.query(`INSERT INTO posts VALUE ("${String(Number(result[0]['MAX(id)']) + 1).padStart(5,'0')}","${req.body.postcontent.title}","${String(date.getFullYear()) + "/" + String(date.getMonth()+1).padStart(2,'0') + "/" + String(date.getDate()).padStart(2,'0')}","${req.body.postcontent.type}","${req.body.postcontent.ctx}")`,(err,result)=>{
             if(err){
                 console.log('failled to insert post')
                 return
             }
-            
+            // sql.query(`SELECT * FROM tags;`,(err,result)=>{
+            //     if(err){
+            //         console.log('failed to get tags')
+            //         return
+            //     }
+            //     for(let i in result){
+            //         for(let j in req.postcontent.tags){
+            //             if(req.postcontent.tags[j] = result[i]['TagName']){
+            //                 break
+            //             }
+            //         }
+            //     }
+            // })  卡住了
+
+            for(let i in req.body.postcontent.tags){
+                sql.query(`INSERT INTO tags VALUE ("${req.body.postcontent.tags[i]}","${req.body.postcontent.tags[i]}");`,(err,result)=>{
+                    if(err){
+                        console.log('failed to add new tag')
+                    }
+                    sql.query(`SELECT MAX(id) FROM posts;`,(err,result)=>{
+                        if(err){
+                            console.log('failed to get id')
+                        }
+                        sql.query(`INSERT INTO posttag VALUE ("${result[0]['MAX(id)']}","${req.body.postcontent.tags[i]}");`,(err)=>{
+                            if(err){
+                                console.log('failed to add post tag')
+                            }
+                        })
+                    })
+                })
+            }
         })
-        res.json()
+        res.json({'msg': 'Success'})
     })
 })//寫文章
 
@@ -220,7 +253,55 @@ app.get('/edit/:id',(req,res)=>{
         res.json(result)
         // console.log(req.params.id) //測試用
     })
+})//改文章讀取
+
+app.post('/editpost',(req,res)=>{
+    sql.query(`UPDATE posts SET id = "${req.body.postid}" , Title = "${req.body.postcontent.title}" , PostType = "${req.body.postcontent.type}" , ContentText = "${req.body.postcontent.ctx}" WHERE id = "${req.body.postid}";`,(err,result)=>{
+        if(err){
+            console.log('failed to edit post content')
+            return
+        }
+        sql.query(`DELETE FROM posttag WHERE id = "${req.body.postid}";`,(err,result)=>{
+            if(err){
+                console.log('failed to clear old tags')
+            }
+            for(let i in req.body.postcontent.tags){
+                sql.query(`INSERT INTO tags VALUE ("${req.body.postcontent.tags[i]}","${req.body.postcontent.tags[i]}");`,(err,result)=>{
+                    if(err){
+                        console.log('failed to add new tag,there might already have the tag or it get error')
+                    }
+                        sql.query(`INSERT INTO posttag VALUE ("${req.body.postid}","${req.body.postcontent.tags[i]}");`,(err)=>{
+                            if(err){
+                                console.log('failed to add tag to post')
+                                return
+                            }
+                        })
+                })
+            }
+        })
+    })
+
 })//改文章
+
+app.post('/login',(req,res)=>{
+    if(req.body.password === process.env.OWNER_PASSWORD){
+        res.json({'user':'owner'})
+    }
+    else{
+        res.json({'msg':'wrong password'})
+    }
+})//登入
+
+app.post('/getTag',(req,res)=>{
+    sql.query(`SELECT posttag.tag,tags.TagName FROM posttag,tags WHERE (posttag.id = "${req.body.id}") AND (posttag.tag = tags.tag)`,(err,result)=>{
+        if(err){
+            console.log('failed to get post tags')
+            return
+        }
+        res.json(result)
+    })
+})
+
 
 
 
